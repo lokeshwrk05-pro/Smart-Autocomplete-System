@@ -1,0 +1,423 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Autocomplete</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/" aria-label="Smart Autocomplete home">
+            <span class="brand-mark">s.</span>
+            <span class="brand-name">Smart Autocomplete</span>
+        </a>
+        <span class="project-label">TRIE <span>+</span> MYSQL</span>
+    </header>
+
+    <main class="page-layout">
+        <section class="main-content">
+            <div class="intro">
+                <p class="eyebrow">A SMALL SEARCH EXPERIMENT</p>
+                <h1>Find the word<br>before you finish typing.</h1>
+                <p class="intro-copy">
+                    Start with a few letters. Get useful suggestions as
+                    you type. No need to finish the whole word.
+                </p>
+            </div>
+
+            <section class="search-section" aria-labelledby="search-heading">
+                <div class="section-heading">
+                    <label for="searchBox" id="search-heading">Try it out</label>
+                    <span class="subtle-label">LIVE SUGGESTIONS</span>
+                </div>
+
+                <div class="search-box">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <path d="m16 16 4 4"></path>
+                    </svg>
+
+                    <input
+                        type="text"
+                        id="searchBox"
+                        placeholder="Start typing a word..."
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        aria-label="Search words"
+                        aria-controls="suggestions"
+                        aria-expanded="false"
+                    >
+                    <kbd>TYPE</kbd>
+                </div>
+
+                <div
+                    id="suggestions"
+                    class="suggestions"
+                    role="listbox"
+                    aria-label="Word suggestions"
+                    aria-live="polite">
+                </div>
+
+                <div class="examples">
+                    <span>Try:</span>
+                    <button type="button" class="example-chip" data-prefix="app">app</button>
+                    <button type="button" class="example-chip" data-prefix="bro">bro</button>
+                    <button type="button" class="example-chip" data-prefix="bin">bin</button>
+                </div>
+            </section>
+
+            <section class="add-section" aria-labelledby="add-heading">
+                <div class="add-copy">
+                    <p class="eyebrow">GROW THE DICTIONARY</p>
+                    <h2 id="add-heading">Missing a word?</h2>
+                    <p>
+                        Add a word to the database and make it available
+                        for future searches.
+                    </p>
+                </div>
+
+                <form id="addWordForm" class="add-form">
+                    <label for="newWord" class="visually-hidden">New word</label>
+                    <input
+                        type="text"
+                        id="newWord"
+                        placeholder="Enter a new word..."
+                        maxlength="100"
+                        autocomplete="off"
+                        required
+                    >
+                    <button type="submit" id="addButton">
+                        <span>Add word</span>
+                        <span aria-hidden="true">+</span>
+                    </button>
+                </form>
+
+                <p id="message" class="message" role="status" aria-live="polite"></p>
+            </section>
+        </section>
+
+        <aside class="side-content">
+            <div class="side-note">
+                <p class="eyebrow">BEHIND THE SEARCH</p>
+                <h2>Simple idea.<br>Useful data structure.</h2>
+
+                <div class="step">
+                    <span class="step-number">01</span>
+                    <div>
+                        <h3>Type a prefix</h3>
+                        <p>The search starts with the letters you enter.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <span class="step-number">02</span>
+                    <div>
+                        <h3>Trie finds matches</h3>
+                        <p>Shared prefixes help organise words efficiently.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <span class="step-number">03</span>
+                    <div>
+                        <h3>MySQL stores words</h3>
+                        <p>The dictionary is loaded from your database.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="side-footer">
+                <span class="status-dot"></span>
+                Built with Python, Flask &amp; MySQL
+            </div>
+        </aside>
+    </main>
+
+    <footer class="footer">
+        <span>Smart Autocomplete System</span>
+        <span>Data Structures &amp; Algorithms Project</span>
+        <span class="credit">Built by Lokesh, Aniket and Sankalp</span>
+    </footer>
+
+    <script>
+        const searchBox = document.getElementById("searchBox");
+        const suggestions = document.getElementById("suggestions");
+        const addWordForm = document.getElementById("addWordForm");
+        const newWordInput = document.getElementById("newWord");
+        const addButton = document.getElementById("addButton");
+        const message = document.getElementById("message");
+
+        let activeIndex = -1;
+        let requestNumber = 0;
+
+        function getSuggestionItems() {
+            return Array.from(
+                suggestions.querySelectorAll(".suggestion-item")
+            );
+        }
+
+        function clearSuggestions() {
+            suggestions.replaceChildren();
+            activeIndex = -1;
+            searchBox.setAttribute("aria-expanded", "false");
+        }
+
+        function updateActiveSuggestion(items) {
+            items.forEach(function(item, index) {
+                const isActive = index === activeIndex;
+
+                item.classList.toggle("is-active", isActive);
+                item.setAttribute("aria-selected", String(isActive));
+
+                if (isActive) {
+                    searchBox.setAttribute("aria-activedescendant", item.id);
+
+                    
+                    item.scrollIntoView({
+                        block: "nearest",
+                        inline: "nearest",
+                        behavior: "auto"
+                    });
+                }
+            });
+
+            if (activeIndex < 0 || activeIndex >= items.length) {
+                searchBox.removeAttribute("aria-activedescendant");
+            }
+        }
+
+        async function selectWord(word) {
+            searchBox.value = word;
+            clearSuggestions();
+            searchBox.focus();
+
+            try {
+                const response = await fetch("/select_word", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ word: word })
+                });
+
+                if (!response.ok) {
+                    console.error("Popularity update failed.");
+                    return;
+                }
+
+                
+                await loadSuggestions();
+            } catch (error) {
+                console.error("Could not update popularity:", error);
+            }
+        }
+
+        async function loadSuggestions() {
+            const prefix = searchBox.value.trim();
+            const currentRequest = ++requestNumber;
+
+            clearSuggestions();
+
+            if (!prefix) {
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    "/suggest/" + encodeURIComponent(prefix)
+                );
+
+                if (!response.ok) {
+                    throw new Error("Suggestion request failed.");
+                }
+
+                const data = await response.json();
+
+                
+                if (
+                    currentRequest !== requestNumber ||
+                    searchBox.value.trim() !== prefix
+                ) {
+                    return;
+                }
+
+                if (!data.suggestions || !data.suggestions.length) {
+                    const empty = document.createElement("p");
+                    empty.className = "empty-result";
+                    empty.textContent = "No matches yet. Try another prefix.";
+                    suggestions.appendChild(empty);
+                    searchBox.setAttribute("aria-expanded", "true");
+                    return;
+                }
+
+                data.suggestions.forEach(function(item, index) {
+                    const word = typeof item === "string" ? item : item.word;
+                    const count = typeof item === "string"
+                        ? 0
+                        : Number(item.count || 0);
+
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "suggestion-item";
+                    button.id = "suggestion-" + index;
+                    button.setAttribute("role", "option");
+                    button.setAttribute("aria-selected", "false");
+
+                    const wordLabel = document.createElement("span");
+                    wordLabel.className = "suggestion-word";
+                    wordLabel.textContent = word;
+
+                    const popularity = document.createElement("span");
+                    popularity.className = "suggestion-count";
+                    popularity.textContent = "🔥 " + count;
+                    popularity.title = count + " selections";
+                    popularity.style.marginLeft = "auto";
+                    popularity.style.marginRight = "12px";
+                    popularity.style.fontSize = "0.85em";
+                    popularity.style.opacity = "0.8";
+                    popularity.style.whiteSpace = "nowrap";
+                    popularity.setAttribute(
+                        "aria-label",
+                        count + " selections"
+                    );
+
+                    const arrow = document.createElement("span");
+                    arrow.className = "suggestion-arrow";
+                    arrow.textContent = "↗";
+                    arrow.setAttribute("aria-hidden", "true");
+
+                    button.append(wordLabel, popularity, arrow);
+
+                    button.addEventListener("click", function() {
+                        selectWord(word);
+                    });
+
+                    suggestions.appendChild(button);
+                });
+
+                searchBox.setAttribute("aria-expanded", "true");
+            } catch (error) {
+                if (currentRequest !== requestNumber) {
+                    return;
+                }
+
+                console.error("Could not load suggestions:", error);
+
+                const item = document.createElement("p");
+                item.className = "empty-result";
+                item.textContent = "Couldn't load suggestions. Try again.";
+                suggestions.appendChild(item);
+                searchBox.setAttribute("aria-expanded", "true");
+            }
+        }
+
+        searchBox.addEventListener("input", function() {
+            activeIndex = -1;
+            searchBox.removeAttribute("aria-activedescendant");
+            loadSuggestions();
+        });
+
+        searchBox.addEventListener("keydown", function(event) {
+            const items = getSuggestionItems();
+
+            if (event.key === "Escape") {
+                clearSuggestions();
+                return;
+            }
+
+            if (!items.length) {
+                return;
+            }
+
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+                activeIndex = (activeIndex + 1) % items.length;
+                updateActiveSuggestion(items);
+            } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                activeIndex = activeIndex <= 0
+                    ? items.length - 1
+                    : activeIndex - 1;
+
+                updateActiveSuggestion(items);
+            } else if (event.key === "Enter" && activeIndex >= 0) {
+                event.preventDefault();
+
+                const selectedItem = items[activeIndex];
+
+                if (selectedItem) {
+                    selectedItem.click();
+                }
+            }
+        });
+
+        suggestions.addEventListener("mousemove", function(event) {
+            const item = event.target.closest(".suggestion-item");
+
+            if (!item) {
+                return;
+            }
+
+            const items = getSuggestionItems();
+            const index = items.indexOf(item);
+
+            if (index !== -1 && activeIndex !== index) {
+                activeIndex = index;
+                updateActiveSuggestion(items);
+            }
+        });
+
+        document.querySelectorAll(".example-chip").forEach(function(chip) {
+            chip.addEventListener("click", function() {
+                searchBox.value = chip.dataset.prefix;
+                activeIndex = -1;
+                loadSuggestions();
+                searchBox.focus();
+            });
+        });
+
+        addWordForm.addEventListener("submit", async function(event) {
+            event.preventDefault();
+
+            const word = newWordInput.value.trim();
+
+            if (!word) {
+                message.textContent = "Please enter a word first.";
+                return;
+            }
+
+            addButton.disabled = true;
+            message.textContent = "Adding word...";
+
+            try {
+                const response = await fetch("/add_word", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ word: word })
+                });
+
+                const data = await response.json();
+                message.textContent = data.message || "Request completed.";
+
+                if (response.ok) {
+                    newWordInput.value = "";
+                    searchBox.value = word;
+                    activeIndex = -1;
+                    await loadSuggestions();
+                }
+            } catch (error) {
+                console.error("Could not add word:", error);
+                message.textContent =
+                    "Couldn't add the word. Check that the server is running.";
+            } finally {
+                addButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
